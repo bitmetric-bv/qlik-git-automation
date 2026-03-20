@@ -117,12 +117,15 @@ def write_file(path: str, content: str) -> None:
 
 
 def find_qlik_changelog_script() -> str | None:
-    for pattern in ["**/Changelog.qvs", "**/changelog.qvs"]:
+    # Zoek op bestandsnaam (met of zonder emoji of prefix)
+    for pattern in ["**/Changelog.qvs", "**/changelog.qvs",
+                    "**/*Changelog*.qvs", "**/*changelog*.qvs"]:
         matches = glob.glob(pattern, recursive=True)
         if matches:
             return matches[0]
+    # Zoek op $tab header — inclusief emoji en andere tekens vóór "Changelog"
     for path in glob.glob("**/*.qvs", recursive=True):
-        if re.search(r"///\s*\$tab\s+[Cc]hangelog", read_file(path)):
+        if re.search(r"///\s*\$tab\s+.*[Cc]hangelog", read_file(path)):
             return path
     return None
 
