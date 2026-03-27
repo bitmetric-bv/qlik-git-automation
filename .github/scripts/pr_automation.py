@@ -189,13 +189,13 @@ Instructies:
   /*---------------------------------------------------------------------------------------------------------------
   Log & Version
 
-  Versienummer    Datum         Naam            Mutatie
+  Versienummer          Datum           Naam            Mutatie
   ---------------------------------------------------------------------------------------------------------------
-  {qlik_version}         {TODAY}       {PR_AUTHOR}     <samenvatting van de wijzigingen in deze PR>
-                                                <extra mutatieregel indien nodig>
+  {qlik_version}        {TODAY}         {PR_AUTHOR}     <samenvatting van de wijzigingen in deze PR>
+                                                        <extra mutatieregel indien nodig>
   <voeg bestaande versieregels uit het huidige blok hieronder toe>
   ---------------------------------------------------------------------------------------------------------------*/
-- Houd kolomuitlijning netjes met spaties (geen tabs)
+- Houd kolomuitlijning netjes met tabs
 """
 
     response = client.models.generate_content(model=MODEL, contents=prompt)
