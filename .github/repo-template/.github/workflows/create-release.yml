@@ -10,5 +10,5 @@ jobs:
   create-release:
     # Sla over als het een bot-commit is
     if: ${{ !contains(github.event.head_commit.message, 'automatisch changelog') }}
-    uses: MitchellBitmetric/qlik-git-automation/.github/workflows/create-release.yml@main
+    uses: bitmetric-bv/qlik-git-automation/.github/workflows/create-release.yml@main
     secrets: inherit

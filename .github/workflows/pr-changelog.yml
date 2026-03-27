@@ -34,7 +34,7 @@ jobs:
       - name: Checkout automation-repo (voor scripts)
         uses: actions/checkout@v4
         with:
-          repository: MitchellBitmetric/qlik-git-automation
+          repository: bitmetric-bv/qlik-git-automation
           path: automation
 
       - name: Run PR automation script

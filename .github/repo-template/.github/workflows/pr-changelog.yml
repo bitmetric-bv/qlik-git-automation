@@ -11,6 +11,6 @@ jobs:
   run-automation:
     # Roept de centrale workflow aan vanuit de automation-repo
     # Pas 'jouw-gebruikersnaam' aan naar je GitHub-gebruikersnaam of organisatienaam
-    uses: MitchellBitmetric/qlik-git-automation/.github/workflows/pr-changelog.yml@main
+    uses: bitmetric-bv/qlik-git-automation/.github/workflows/pr-changelog.yml@main
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
