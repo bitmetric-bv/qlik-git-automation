@@ -36,7 +36,7 @@ jobs:
           curl -sSL \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/${{ github.repository_owner }}/qlik-git-automation/contents/.github/scripts/pr_automation.py?ref=main" \
+            "https://api.github.com/repos/MitchellBitmetric/qlik-git-automation/contents/.github/scripts/pr_automation.py?ref=main" \
             -o pr_automation.py
 
       - name: Run PR automation script
