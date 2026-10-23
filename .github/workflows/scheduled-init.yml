@@ -6,7 +6,10 @@ name: Scheduled Repo Onboarding (scan)
 
 on:
   schedule:
-    - cron: "17 * * * *"   # elk uur (op :17 om de piek te mijden)
+    - cron: "17 6 * * *"    # dagelijks; vangnet voor nieuwe repo's
+  push:
+    branches: [main]
+    paths: ["templates/**", ".github/scripts/init_repo.py"]   # conventies direct uitrollen
   workflow_dispatch:
     inputs:
       target_orgs:
