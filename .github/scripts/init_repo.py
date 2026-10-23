@@ -145,6 +145,22 @@ ai:
     - qlik_block
 """
 
+# Beheerde bestanden voor Claude Code. De conventies worden bij élke scan naar elke
+# gemarkeerde repo gesynct (overschrijven); CLAUDE.md is van de repo zelf en wordt
+# alleen aangemaakt als hij ontbreekt.
+CONVENTIONS_PATH = ".claude/qlik-conventions.md"
+CONVENTIONS_SRC  = os.path.join(os.path.dirname(__file__), "..", "..", "templates", "qlik-conventions.md")
+CLAUDE_MD_PATH   = "CLAUDE.md"
+CLAUDE_MD_STUB   = """\
+# {repo}
+
+@.claude/qlik-conventions.md
+
+## Deze app
+
+<!-- App-specifiek: doel, upstream/downstream repo's, dev- en prd-app (space + app-ID). -->
+"""
+
 # Bestand dat als "volledig geseed"-markering geldt (idempotente scan). Wijs naar
 # het nieuwst toegevoegde bestand, zodat eerder geseede repos die dit nog missen
 # opnieuw langs seed_repo gaan (push_file slaat bestaande bestanden over).
@@ -188,6 +204,53 @@ def push_file(org: str, repo: str, path: str, content: str, branch: str) -> None
     else:
         print(f"    ✘ Fout bij {path}: {resp.status_code} – {resp.text}")
         resp.raise_for_status()
+
+
+def sync_file(org: str, repo: str, path: str, content: str, branch: str, overwrite: bool = True) -> bool:
+    """Zet ``path`` op ``content``. Geeft True als er een commit is gemaakt.
+
+    overwrite=False: alleen aanmaken (bestand is van de repo zelf). Faalt zacht
+    (bv. beschermde main), zodat één repo de hele scan niet breekt.
+    """
+    url = f"{API}/repos/{org}/{repo}/contents/{path}"
+    cur = requests.get(f"{url}?ref={branch}", headers=HEADERS, timeout=30)
+    body = {"content": base64.b64encode(content.encode()).decode(), "branch": branch}
+    if cur.status_code == 200:
+        data = cur.json()
+        if not overwrite or base64.b64decode(data["content"]).decode() == content:
+            return False
+        body["sha"] = data["sha"]
+    verb = "bijgewerkt" if "sha" in body else "toegevoegd"
+    body["message"] = f"chore: {path} {verb} via qlik-git-automation [skip release]"
+    resp = requests.put(url, headers=HEADERS, json=body, timeout=30)
+    if resp.status_code in (200, 201):
+        print(f"    ✔ {path} {verb} op {branch}")
+        return True
+    print(f"    ⚠ {path} niet gesynct op {branch}: {resp.status_code} – {resp.text}")
+    return False
+
+
+def merge_main_into_dev(org: str, repo: str, main: str) -> None:
+    """Houd dev een voorouder-superset van main (merge, nooit force), zodat de
+    fast-forward van dev na een release blijft werken."""
+    resp = requests.post(
+        f"{API}/repos/{org}/{repo}/merges", headers=HEADERS, timeout=30,
+        json={"base": "dev", "head": main, "commit_message": f"chore: sync {main} -> dev [skip release]"},
+    )
+    if resp.status_code == 201:
+        print(f"    ✔ {main} gemerged in dev")
+    elif resp.status_code != 204:   # 204 = dev bevat main al
+        print(f"    ⚠ {main} -> dev niet gemerged: {resp.status_code} – {resp.text}")
+
+
+def sync_managed_files(org: str, repo: str, branch: str) -> None:
+    """Conventies + CLAUDE.md-stub naar main; daarna main -> dev."""
+    with open(CONVENTIONS_SRC, encoding="utf-8") as f:
+        conventions = f.read()
+    changed = sync_file(org, repo, CONVENTIONS_PATH, conventions, branch)
+    changed |= sync_file(org, repo, CLAUDE_MD_PATH, CLAUDE_MD_STUB.format(repo=repo), branch, overwrite=False)
+    if changed and get_branch_sha(org, repo, "dev"):
+        merge_main_into_dev(org, repo, branch)
 
 
 def get_branch_sha(org: str, repo: str, branch: str) -> str | None:
@@ -328,9 +391,10 @@ def scan_org(org: str) -> tuple[int, int]:
         if file_exists(org, repo, SEEDED_SENTINEL, branch):
             print(f"  ⏭  {repo} al geseed — overgeslagen")
             skipped += 1
-            continue
-        if seed_repo(org, repo, info):
+        elif seed_repo(org, repo, info):
             seeded += 1
+        # Beheerde bestanden gelden voor nieuwe én bestaande repo's.
+        sync_managed_files(org, repo, branch)
     return seeded, skipped
 
 
@@ -352,11 +416,19 @@ def main() -> None:
         raise SystemExit("Zet TARGET_ORGS (of ORG_NAME) voor de scan-modus.")
 
     total_seeded = total_skipped = 0
+    failed = []
     for org in TARGET_ORGS:
-        s, k = scan_org(org)
+        try:
+            s, k = scan_org(org)
+        except requests.HTTPError as e:      # bv. onbekende org: de rest gewoon doorscannen
+            print(f"  ✘ Org '{org}' overgeslagen: {e}")
+            failed.append(org)
+            continue
         total_seeded += s
         total_skipped += k
     print(f"\n✅ Scan klaar over {len(TARGET_ORGS)} org(s) — {total_seeded} geseed, {total_skipped} al gereed.")
+    if failed:
+        raise SystemExit(f"Mislukt voor org(s): {', '.join(failed)}")
 
 
 if __name__ == "__main__":

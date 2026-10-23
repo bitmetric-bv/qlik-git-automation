@@ -3,6 +3,8 @@
 import os
 import sys
 
+import pytest
+
 os.environ.setdefault("GH_TOKEN", "x")
 os.environ.setdefault("ORG_NAME", "acme")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".github", "scripts"))
@@ -60,6 +62,69 @@ def test_scan_seeds_only_marked_and_unseen(monkeypatch):
     # 'already' geldt als reeds geseed
     monkeypatch.setattr(ir, "file_exists", lambda org, repo, path, branch: repo == "already")
     monkeypatch.setattr(ir, "seed_repo", lambda org, repo, info: seeded.append(repo) or True)
+    synced = []
+    monkeypatch.setattr(ir, "sync_managed_files", lambda org, repo, branch: synced.append(repo))
 
     ir.scan_org("acme")
     assert seeded == ["sales"]               # plain: geen marker, already: al geseed
+    assert synced == ["sales", "already"]    # beheerde bestanden ook voor al geseede repo's
+
+
+class _Resp:
+    def __init__(self, status, payload=None):
+        self.status_code, self._p, self.text = status, payload or {}, ""
+
+    def json(self):
+        return self._p
+
+
+def _fake_api(monkeypatch, existing):
+    """existing: None (bestand ontbreekt) of tekst. Geeft de PUT-bodies terug."""
+    import base64
+    puts = []
+    cur = (_Resp(200, {"sha": "abc", "content": base64.b64encode(existing.encode()).decode()})
+           if existing is not None else _Resp(404))
+    monkeypatch.setattr(ir.requests, "get", lambda *a, **k: cur)
+    monkeypatch.setattr(ir.requests, "put", lambda url, json=None, **k: puts.append(json) or _Resp(200))
+    return puts
+
+
+def test_sync_file_updates_changed_content(monkeypatch):
+    puts = _fake_api(monkeypatch, "oud")
+    assert ir.sync_file("acme", "sales", "x.md", "nieuw", "main") is True
+    assert puts[0]["sha"] == "abc" and "[skip release]" in puts[0]["message"]
+
+
+def test_sync_file_noop_when_identical(monkeypatch):
+    puts = _fake_api(monkeypatch, "zelfde")
+    assert ir.sync_file("acme", "sales", "x.md", "zelfde", "main") is False
+    assert puts == []
+
+
+def test_sync_file_never_overwrites_repo_owned_file(monkeypatch):
+    puts = _fake_api(monkeypatch, "eigen tekst")
+    assert ir.sync_file("acme", "sales", "CLAUDE.md", "stub", "main", overwrite=False) is False
+    assert puts == []
+
+
+def test_sync_file_creates_missing(monkeypatch):
+    puts = _fake_api(monkeypatch, None)
+    assert ir.sync_file("acme", "sales", "CLAUDE.md", "stub", "main", overwrite=False) is True
+    assert "sha" not in puts[0]
+
+
+def test_scan_continues_after_failing_org(monkeypatch):
+    seen = []
+
+    def scan(org):
+        seen.append(org)
+        if org == "bestaat-niet":
+            raise ir.requests.HTTPError("404")
+        return 1, 0
+    monkeypatch.setattr(ir, "scan_org", scan)
+    monkeypatch.setattr(ir, "TARGET_ORGS", ["bestaat-niet", "bitmetric-mcf"])
+    monkeypatch.setattr(ir, "REPO_NAME", None)
+    with pytest.raises(SystemExit) as e:
+        ir.main()
+    assert "bestaat-niet" in str(e.value)               # run faalt zichtbaar...
+    assert seen == ["bestaat-niet", "bitmetric-mcf"]    # ...maar tweede org is wél gescand
